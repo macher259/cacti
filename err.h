@@ -1,24 +1,15 @@
-/**
- * Program z przykładowych programów współbieżnych w języku C, które
- * omawiane były na laboratoriach. Nie jestem autorem.
- * Używam kodu zgodnie z odpowiedzią na forum zadania.
- */
-
 #ifndef CACTI_ERR_H
 #define CACTI_ERR_H
 
 #ifndef _ERR_
 #define _ERR_
 
-/* wypisuje informacje o błędnym zakończeniu funkcji systemowej
-i kończy działanie */
+/* Prints information about an error from a system function and exits. */
 extern void syserr(const char *fmt, ...);
 
-/* wypisuje informacje o błędzie i kończy działanie */
+/* Prints information about an error and exits. */
 extern void fatal(const char *fmt, ...);
 
 #endif
-
-
 
 #endif //CACTI_ERR_H
