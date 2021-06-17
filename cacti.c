@@ -10,18 +10,17 @@
 #include <string.h>
 #include <signal.h>
 #include <errno.h>
-//#include <unistd.h>
 
-/// Symbolizes no actor
+// Symbolizes no actor.
 #define EMPTY -1000
 
-/// State of an actor
+// State of an actor.
 typedef enum STATE {
     DEAD,
     ALIVE
 } ACTOR_STATE;
 
-/// Cache-friendly dynamic actor queue
+// Cache-friendly dynamic actor queue.
 typedef struct actor_queue {
     size_t size;
     size_t capacity;
@@ -30,7 +29,7 @@ typedef struct actor_queue {
     actor_id_t *data;
 } actor_queue_t;
 
-/// Cache-friendly static message queue
+// Cache-friendly static message queue.
 typedef struct message_queue {
     size_t size;
     size_t front;
@@ -47,8 +46,7 @@ typedef struct actor_type {
     bool queued;
 } actor_t;
 
-
-/// GLOBAL VARIABLES
+// GLOBAL VARIABLES
 static pthread_t *workers = NULL;
 static actor_t *actors = NULL;
 static actor_id_t actor_count = 0;
@@ -61,8 +59,7 @@ static bool block_spawn = false;
 static bool working = false;
 static pthread_t signal_handler;
 
-
-/// SYNCHRONIZATION
+// SYNCHRONIZATION
 static _Thread_local actor_id_t current_actor = EMPTY;
 static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t sleep = PTHREAD_COND_INITIALIZER;
@@ -83,42 +80,34 @@ static void lock_mutex() {
     if (pthread_mutex_lock(&mutex)) {
         syserr("MUTEX LOCK FAIL");
     }
-    //printf("%lu took mutex\n", pthread_self());
-
 }
 
 static void unlock_mutex() {
-    //printf("%lu gave away mutex\n", pthread_self());
-
     if (pthread_mutex_unlock(&mutex)) {
         syserr("MUTEX UNLOCK FAIL");
     }
 }
 
 static void go_sleep() {
-    //printf("%lu going to sleep\n", pthread_self());
     pthread_cond_wait(&sleep, &mutex);
 }
 
 static void wake_everyone() {
-    //printf("Woke everyone\n");
     pthread_cond_broadcast(&sleep);
 }
 
 static void wake_somebody() {
-    //printf("woke somebody\n");
     pthread_cond_signal(&sleep);
 }
 
 static void kill_actor(actor_id_t actor) {
-    //printf("Kiled actor %ld, left: %ld\n",actor, alive_count - 1);
     actors[actor].state = DEAD;
     --alive_count;
 
     if (alive_count == 0) {
         end = true;
         working = false;
-        //pthread_kill(signal_handler, SIGINT);
+
         if (!block_spawn) {
             pthread_cancel(signal_handler);
             pthread_join(signal_handler, NULL);
@@ -129,14 +118,13 @@ static void kill_actor(actor_id_t actor) {
 
 static actor_id_t get_actor() {
     if (actors_ready->size == 0)
-        syserr("No actors to get");
+        fatal("No actors to get");
 
     actor_id_t actor = actors_ready->data[actors_ready->front];
     actors_ready->size--;
     actors_ready->front = (actors_ready->front + 1) % actors_ready->capacity;
 
     actors[actor].queued = false;
-    //printf("Got actor: %ld\n", actor);
 
     return actor;
 }
@@ -161,13 +149,13 @@ static void enqueue_actor(actor_id_t actor) {
 
     if (q->size == q->capacity) {
         resize_actor_queue();
-        //syserr("capacity full");
     }
+
     q->data[q->back] = actor;
     q->size++;
     q->back = (q->back + 1) % q->capacity;
     actors[actor].queued = true;
-    //printf("Enqueued actor: %ld\n", actor);
+
     if (workers_sleeping > 0) {
         wake_somebody();
     }
@@ -176,15 +164,14 @@ static void enqueue_actor(actor_id_t actor) {
 static message_t get_message(actor_id_t actor) {
     message_queue_t *q = actors[actor].messages;
     if (q->size == 0)
-        syserr("No message to get");
+        fatal("No message to get");
 
     message_t msg = q->data[q->front];
-    //printf("popped %lx from %ld queue\n", msg.message_type, actor);
     q->size--;
     q->front = (q->front + 1) % ACTOR_QUEUE_LIMIT;
 
     if (q->size == 0 && (msg.message_type == MSG_GODIE ||
-    !actors[actor].taking_msg)) {
+        !actors[actor].taking_msg)) {
         kill_actor(actor);
     }
 
@@ -193,10 +180,9 @@ static message_t get_message(actor_id_t actor) {
 
 static void enqueue_message(actor_id_t actor, message_t msg) {
     message_queue_t *q = actors[actor].messages;
-    //printf("Pushed %lx to %ld queue\n", msg.message_type, actor);
 
     if (q->size == ACTOR_QUEUE_LIMIT)
-        syserr("message queue full");
+        fatal("message queue full");
 
     q->data[q->back] = msg;
     q->size++;
@@ -242,7 +228,6 @@ static message_queue_t *new_message_queue() {
 }
 
 static void spawn_actor(role_t *role) {
-    //actor_id_t id = actor_count;
     add_actor(role);
 }
 
@@ -269,27 +254,23 @@ static void *work() {
 
         if (msg.message_type == MSG_SPAWN) {
             spawn_actor(msg.data);
-            //unlock_mutex();
 
-        }
-        else if (msg.message_type == MSG_GODIE) {
+        } else if (msg.message_type == MSG_GODIE) {
             godie();
-            //unlock_mutex();
-        }
-        else {
+        } else {
             role_t *role = actors[current_actor].role;
             void **stp = &actors[current_actor].stateptr;
             unlock_mutex();
 
             if (msg.message_type > (message_type_t) role->nprompts) {
-                syserr("Bad message");
+                fatal("Bad message");
             }
             role->prompts[msg.message_type](stp, msg.nbytes, msg.data);
             lock_mutex();
         }
 
         if (!actors[current_actor].queued &&
-        actors[current_actor].messages->size > 0)
+            actors[current_actor].messages->size > 0)
             enqueue_actor(current_actor);
 
         unlock_mutex();
@@ -322,12 +303,12 @@ static void *shutdown() {
     int sig;
     do {
         sigwait(&sigset, &sig);
-    } while(sig != SIGINT || end);
+    } while (sig != SIGINT || end);
 
     if (!block_spawn) {
         block_spawn = true;
         message_t kill = {
-                .message_type = MSG_GODIE
+            .message_type = MSG_GODIE
         };
         for (size_t i = 0; i < (size_t) actor_count; ++i) {
             send_message(i, kill);
@@ -342,16 +323,12 @@ static void block_signals() {
 }
 
 static bool create_signal_handler() {
-    //signal_handler = PTHREAD_CREATE_DETACHED;
-    //pthread_attr_t attr;
-    //pthread_attr_init(&attr);
-    //pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-    pthread_create(&signal_handler, NULL, shutdown, NULL);
-
+    if (pthread_create(&signal_handler, NULL, shutdown, NULL) != 0)
+        syserr("error while creating a signal handler");
     return true;
 }
 
-int actor_system_create(actor_id_t *actor, role_t *const role)  {
+int actor_system_create(actor_id_t *actor, role_t *const role) {
     lock_mutex();
     create_signal_handler();
     *actor = 0;
@@ -359,8 +336,6 @@ int actor_system_create(actor_id_t *actor, role_t *const role)  {
         unlock_mutex();
         return -998;
     }
-
-
 
     if (!initialize_threads()) {
         unlock_mutex();
@@ -451,17 +426,16 @@ static void add_actor(role_t *role) {
         return;
 
     actor_id_t id = actor_count;
-    //printf("spawned %ld\n", id);
     actor_count++;
     alive_count++;
 
     actor_t actor = {
-            .stateptr = NULL,
-            .role = role,
-            .state = ALIVE,
-            .messages = new_message_queue(),
-            .taking_msg = true,
-            .queued = false
+        .stateptr = NULL,
+        .role = role,
+        .state = ALIVE,
+        .messages = new_message_queue(),
+        .taking_msg = true,
+        .queued = false
     };
 
     if (actor_count >= actors_capacity) {
@@ -475,9 +449,9 @@ static void add_actor(role_t *role) {
 
     actors[id] = actor;
     message_t hello = {
-            .message_type = MSG_HELLO,
-            .nbytes = sizeof(actor_id_t),
-            .data = (void*) actor_id_self()
+        .message_type = MSG_HELLO,
+        .nbytes = sizeof(actor_id_t),
+        .data = (void *) actor_id_self()
     };
 
     enqueue_message(id, hello);
